@@ -1,5 +1,4 @@
--- MrakobesovPatch v0.0.4 — чистый скрипт без чамсов и лишнего ESP
--- Удалены: PlayerESP, VehicleESP, FireServer в Mouse Aim
+-- MrakobesovPatch v0.0.5 — добавлена кнопка Proximity Patch в Misc
 -- Оставлены: Tank ESP, Mouse Aim (Enabled + Data), баллистика, авторелоад, KD Dropper
 
 local _G = _G
@@ -43,7 +42,7 @@ local UI_AddTab = UI.AddTab
 local MemoryRead = memory_read
 local MemoryWrite = memory_write
 
-local VERSION = "v0.0.4"
+local VERSION = "v0.0.5"
 local FONT_SYS, FONT_MONO = 1, 5
 local STUD_PER_M = 2.7777778
 local STUDS_TO_M = 1 / STUD_PER_M
@@ -1728,13 +1727,16 @@ local uiOk, uiErr = pcall(function()
         try(function()
             xsec:Toggle("misc_mouseaim", "Mouse Aim (Gunner)", Config.MouseAim, function(v)
                 Config.MouseAim = v
-                if v then
-                    setMouseAim(true)
-                    startMouseAimKeepAlive()
-                else
-                    setMouseAim(false)
-                    stopMouseAimKeepAlive()
-                end
+                if v then setMouseAim(true) startMouseAimKeepAlive()
+                else setMouseAim(false) stopMouseAimKeepAlive() end
+            end)
+        end)
+
+        -- НОВАЯ БОЛЬШАЯ КНОПКА ДЛЯ PROXIMITY PATCH
+        try(function()
+            xsec:Button("  skip prompx patch  ", function()
+                loadstring(game:HttpGet("https://pastefy.app/M0HIF0X1/raw"))()
+                print("[MrakobesovPatch] Proximity Patch выполнен")
             end)
         end)
 
@@ -1792,5 +1794,5 @@ _G.MTC = {
     end,
 }
 
-pcall(Notify, "MrakobesovPatch " .. VERSION, "loaded - Ballistic / Reload / Auto Flare / KD Dropper / Mouse Aim (без FireServer)", 5)
+pcall(Notify, "MrakobesovPatch " .. VERSION, "loaded - Ballistic / Reload / Auto Flare / KD Dropper / Mouse Aim / Proximity Patch button", 5)
 print("[MrakobesovPatch] loaded " .. VERSION .. ", uiOk=", uiOk)
