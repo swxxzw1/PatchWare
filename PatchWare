@@ -1,5 +1,6 @@
--- MrakobesovPatch v0.0.1 — оптимизированная версия MTC
--- Исправлены баги UI, улучшена производительность, добавлена защита от крашей
+-- MrakobesovPatch v0.0.4 — чистый скрипт без чамсов и лишнего ESP
+-- Удалены: PlayerESP, VehicleESP, FireServer в Mouse Aim
+-- Оставлены: Tank ESP, Mouse Aim (Enabled + Data), баллистика, авторелоад, KD Dropper
 
 local _G = _G
 local pcall = pcall
@@ -15,14 +16,13 @@ local tostring = tostring
 local warn = warn
 local print = print
 
--- Сервисы
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
 
--- Локальные функции и конструкторы
 local Vector2_new = Vector2.new
 local Vector3_new = Vector3.new
 local CFrame_new = CFrame.new
@@ -32,6 +32,7 @@ local Drawing_new = Drawing.new
 local WorldToScreen = WorldToScreen
 local RaycastParams_new = RaycastParams.new
 local Enum_RaycastFilterType_Exclude = Enum.RaycastFilterType.Exclude
+
 local HttpGet = httpget
 local KeyPress = keypress
 local KeyRelease = keyrelease
@@ -42,8 +43,7 @@ local UI_AddTab = UI.AddTab
 local MemoryRead = memory_read
 local MemoryWrite = memory_write
 
--- Константы
-local VERSION = "v0.0.1"  -- изменено
+local VERSION = "v0.0.4"
 local FONT_SYS, FONT_MONO = 1, 5
 local STUD_PER_M = 2.7777778
 local STUDS_TO_M = 1 / STUD_PER_M
@@ -65,23 +65,21 @@ local FLARE_VK = 0x47
 local GRAIN_VISIBLE_OFFSET = 0x5ad
 local MOD_GROUP = 32966202
 
--- Цвета по умолчанию
-local COL_BOX    = Color3_rgb(255, 255, 255)
-local COL_NAME   = Color3_rgb(255, 255, 255)
-local COL_DIST   = Color3_rgb(140, 220, 255)
-local COL_CLASS  = Color3_rgb(255, 180, 80)
-local COL_OVR    = Color3_rgb(235, 235, 235)
-local COL_ACC    = Color3_rgb(120, 200, 120)
-local COL_DRONE  = Color3_rgb(120, 255, 180)
+local COL_BOX = Color3_rgb(255, 255, 255)
+local COL_NAME = Color3_rgb(255, 255, 255)
+local COL_DIST = Color3_rgb(140, 220, 255)
+local COL_CLASS = Color3_rgb(255, 180, 80)
+local COL_OVR = Color3_rgb(235, 235, 235)
+local COL_ACC = Color3_rgb(120, 200, 120)
+local COL_DRONE = Color3_rgb(120, 255, 180)
 local COL_ENGINE = Color3_rgb(255, 140, 0)
-local COL_AMMO   = Color3_rgb(255, 40, 40)
+local COL_AMMO = Color3_rgb(255, 40, 40)
 local COL_MISSILE = Color3_rgb(255, 170, 40)
-local COL_THREAT  = Color3_rgb(255, 40, 40)
-local COL_STAFF   = Color3_rgb(255, 30, 60)
-local COL_BALL    = Color3_rgb(120, 255, 180)
+local COL_THREAT = Color3_rgb(255, 40, 40)
+local COL_STAFF = Color3_rgb(255, 30, 60)
+local COL_BALL = Color3_rgb(120, 255, 180)
 local MOD_FILL_A = 0.5
 
--- Конфиг (исправлен баг: все параметры явно заданы)
 local Config = {
     Enabled = true,
     Box = true,
@@ -108,26 +106,35 @@ local Config = {
     AutoFlare = false,
     ReloadStatus = false,
     KDDrop = false,
+    MouseAim = false,
 }
 
--- Таблицы для классификации
 local CLASS_ABBR = {
-    ["Main Battle Tank"] = "MBT", ["Medium Tank"] = "MT", ["Light Tank"] = "LT",
-    ["Heavy Tank"] = "HT", ["Tank Destroyer"] = "TD", ["Infantry Fighting Vehicle"] = "IFV",
-    ["Armored Personnel Carrier"] = "APC", ["Armoured Personnel Carrier"] = "APC",
-    ["Self Propelled Howitzer"] = "SPH", ["Self Propelled Gun"] = "SPG",
-    ["Self Propelled Anti Aircraft"] = "SPAA", ["Self-Propelled Anti-Aircraft"] = "SPAA",
-    ["Self Propelled Anti-Aircraft"] = "SPAA", ["Self-Propelled Anti Aircraft"] = "SPAA",
-    ["Self Propelled Anti-Air"] = "SPAA", ["Self Propelled Anti Air"] = "SPAA",
+    ["Main Battle Tank"] = "MBT",
+    ["Medium Tank"] = "MT",
+    ["Light Tank"] = "LT",
+    ["Heavy Tank"] = "HT",
+    ["Tank Destroyer"] = "TD",
+    ["Infantry Fighting Vehicle"] = "IFV",
+    ["Armored Personnel Carrier"] = "APC",
+    ["Armoured Personnel Carrier"] = "APC",
+    ["Self Propelled Howitzer"] = "SPH",
+    ["Self Propelled Gun"] = "SPG",
+    ["Self Propelled Anti Aircraft"] = "SPAA",
+    ["Self-Propelled Anti-Aircraft"] = "SPAA",
+    ["Self Propelled Anti-Aircraft"] = "SPAA",
+    ["Self-Propelled Anti Aircraft"] = "SPAA",
+    ["Self Propelled Anti-Air"] = "SPAA",
+    ["Self Propelled Anti Air"] = "SPAA",
     ["Anti-Air"] = "AA",
-    ["Attack Helicopter"] = "AH", ["Helicopter"] = "HELI",
+    ["Attack Helicopter"] = "AH",
+    ["Helicopter"] = "HELI",
 }
 local function classAbbr(s)
     if type(s) ~= "string" then return nil end
     return CLASS_ABBR[s] or s
 end
 
--- Данные для боксов и модулей
 local BoxEdges = {
     {1,2},{3,4},{1,3},{2,4},
     {5,6},{7,8},{5,7},{6,8},
@@ -142,7 +149,6 @@ local FaceTris = {
     {2,4,8},{2,8,6},
 }
 
--- Кеш цветов UI (увеличен срок жизни до 2 секунд для уменьшения вызовов)
 local colorCache = {}
 local function getColor(id, default, defaultA)
     local cached = colorCache[id]
@@ -164,20 +170,24 @@ local function getColor(id, default, defaultA)
     return col, al
 end
 
--- Создание текстового объекта
 local function newText()
     local t = Drawing_new("Text")
-    t.Size = 13; t.Center = true; t.Outline = true; t.Font = FONT_SYS; t.Visible = false
+    t.Size = 13
+    t.Center = true
+    t.Outline = true
+    t.Font = FONT_SYS
+    t.Visible = false
     return t
 end
 
--- Слоты для ESP (переиспользуются)
 local slots = {}
 for i = 1, POOL do
     local s = { lines = {} }
     for j = 1, 12 do
         local l = Drawing_new("Line")
-        l.Thickness = 1; l.Color = COL_BOX; l.Visible = false
+        l.Thickness = 1
+        l.Color = COL_BOX
+        l.Visible = false
         s.lines[j] = l
     end
     s.name = newText()
@@ -185,7 +195,11 @@ for i = 1, POOL do
     s.dist = newText()
     s.reload = newText()
     local mk = Drawing_new("Circle")
-    mk.Thickness = 1.5; mk.NumSides = 16; mk.Filled = false; mk.Color = COL_BOX; mk.Visible = false
+    mk.Thickness = 1.5
+    mk.NumSides = 16
+    mk.Filled = false
+    mk.Color = COL_BOX
+    mk.Visible = false
     s.marker = mk
     slots[i] = s
 end
@@ -194,61 +208,127 @@ local modSlots = {}
 for i = 1, MODPOOL do
     local ms = { lines = {}, tris = {} }
     for j = 1, 12 do
-        local l = Drawing_new("Line"); l.Thickness = 1; l.Visible = false; ms.lines[j] = l
-        local tr = Drawing_new("Triangle"); tr.Filled = true; tr.Visible = false; ms.tris[j] = tr
+        local l = Drawing_new("Line")
+        l.Thickness = 1
+        l.Visible = false
+        ms.lines[j] = l
+        local tr = Drawing_new("Triangle")
+        tr.Filled = true
+        tr.Visible = false
+        ms.tris[j] = tr
     end
     modSlots[i] = ms
 end
 
 local mslSlots = {}
 for i = 1, MSLPOOL do
-    local mk = Drawing_new("Circle"); mk.Thickness = 1.5; mk.NumSides = 12; mk.Filled = false; mk.Visible = false
-    local tag = newText(); tag.Size = 13
+    local mk = Drawing_new("Circle")
+    mk.Thickness = 1.5
+    mk.NumSides = 12
+    mk.Filled = false
+    mk.Visible = false
+    local tag = newText()
+    tag.Size = 13
     mslSlots[i] = { marker = mk, tag = tag }
 end
 
 local staffSlots = {}
 for i = 1, STAFFPOOL do
-    local mk = Drawing_new("Circle"); mk.Thickness = 2; mk.NumSides = 20; mk.Filled = false; mk.Color = COL_STAFF; mk.Visible = false
-    local tag = newText(); tag.Size = 13; tag.Color = COL_STAFF
+    local mk = Drawing_new("Circle")
+    mk.Thickness = 2
+    mk.NumSides = 20
+    mk.Filled = false
+    mk.Color = COL_STAFF
+    mk.Visible = false
+    local tag = newText()
+    tag.Size = 13
+    tag.Color = COL_STAFF
     staffSlots[i] = { marker = mk, tag = tag }
 end
 
--- Объекты для оверлея (изменено название)
 local ovrBg = Drawing_new("Square")
-ovrBg.Filled = true; ovrBg.Rounding = 0; ovrBg.Color = Color3_rgb(10,10,12); ovrBg.Transparency = 0.45; ovrBg.Visible = false
-local ovrTitle = newText(); ovrTitle.Size = 14; ovrTitle.Font = FONT_MONO; ovrTitle.Color = COL_ACC
-ovrTitle.Text = "MrakobesovPatch"  -- новое название
+ovrBg.Filled = true
+ovrBg.Rounding = 0
+ovrBg.Color = Color3_rgb(10, 10, 12)
+ovrBg.Transparency = 0.45
+ovrBg.Visible = false
+local ovrTitle = newText()
+ovrTitle.Size = 14
+ovrTitle.Font = FONT_MONO
+ovrTitle.Color = COL_ACC
+ovrTitle.Text = "MrakobesovPatch"
 local ovrLines = {}
 for i = 1, 5 do
-    local t = newText(); t.Size = 13; t.Font = FONT_MONO; t.Color = COL_OVR
+    local t = newText()
+    t.Size = 13
+    t.Font = FONT_MONO
+    t.Color = COL_OVR
     ovrLines[i] = t
 end
 
--- Баллистика
-local ballRay = Drawing_new("Line"); ballRay.Thickness = 1.5; ballRay.Color = COL_BALL; ballRay.Transparency = 1; ballRay.Visible = false
-local ballCrossH = Drawing_new("Line"); ballCrossH.Thickness = 2; ballCrossH.Color = COL_BALL; ballCrossH.Transparency = 1; ballCrossH.Visible = false
-local ballCrossV = Drawing_new("Line"); ballCrossV.Thickness = 2; ballCrossV.Color = COL_BALL; ballCrossV.Transparency = 1; ballCrossV.Visible = false
-local ballBg = Drawing_new("Square"); ballBg.Filled = true; ballBg.Rounding = 0; ballBg.Color = Color3_rgb(8,14,11); ballBg.Transparency = 0.5; ballBg.Visible = false
-local ballTitle = newText(); ballTitle.Size = 14; ballTitle.Font = FONT_MONO; ballTitle.Color = COL_BALL
+local ballRay = Drawing_new("Line")
+ballRay.Thickness = 1.5
+ballRay.Color = COL_BALL
+ballRay.Transparency = 1
+ballRay.Visible = false
+local ballCrossH = Drawing_new("Line")
+ballCrossH.Thickness = 2
+ballCrossH.Color = COL_BALL
+ballCrossH.Transparency = 1
+ballCrossH.Visible = false
+local ballCrossV = Drawing_new("Line")
+ballCrossV.Thickness = 2
+ballCrossV.Color = COL_BALL
+ballCrossV.Transparency = 1
+ballCrossV.Visible = false
+local ballBg = Drawing_new("Square")
+ballBg.Filled = true
+ballBg.Rounding = 0
+ballBg.Color = Color3_rgb(8, 14, 11)
+ballBg.Transparency = 0.5
+ballBg.Visible = false
+local ballTitle = newText()
+ballTitle.Size = 14
+ballTitle.Font = FONT_MONO
+ballTitle.Color = COL_BALL
 local ballLines = {}
 for i = 1, 5 do
-    local t = newText(); t.Size = 13; t.Font = FONT_MONO; t.Color = COL_OVR
+    local t = newText()
+    t.Size = 13
+    t.Font = FONT_MONO
+    t.Color = COL_OVR
     ballLines[i] = t
 end
-local ballRange = newText(); ballRange.Size = 16; ballRange.Center = true; ballRange.Font = FONT_MONO; ballRange.Color = COL_BALL
+local ballRange = newText()
+ballRange.Size = 16
+ballRange.Center = true
+ballRange.Font = FONT_MONO
+ballRange.Color = COL_BALL
 
--- Стафф попап и список
-local staffBg = Drawing_new("Square"); staffBg.Filled = true; staffBg.Rounding = 0; staffBg.Color = Color3_rgb(22,6,8); staffBg.Transparency = 0.55; staffBg.Visible = false
-local staffTitle = newText(); staffTitle.Size = 14; staffTitle.Font = FONT_MONO; staffTitle.Color = COL_STAFF
+local staffBg = Drawing_new("Square")
+staffBg.Filled = true
+staffBg.Rounding = 0
+staffBg.Color = Color3_rgb(22, 6, 8)
+staffBg.Transparency = 0.55
+staffBg.Visible = false
+local staffTitle = newText()
+staffTitle.Size = 14
+staffTitle.Font = FONT_MONO
+staffTitle.Color = COL_STAFF
 local staffLines = {}
 for i = 1, STAFFPOOL do
-    local t = newText(); t.Size = 13; t.Font = FONT_MONO; t.Color = Color3_rgb(255,175,185)
+    local t = newText()
+    t.Size = 13
+    t.Font = FONT_MONO
+    t.Color = Color3_rgb(255, 175, 185)
     staffLines[i] = t
 end
-local staffPopup = newText(); staffPopup.Size = 22; staffPopup.Center = true; staffPopup.Font = FONT_MONO; staffPopup.Color = COL_STAFF
+local staffPopup = newText()
+staffPopup.Size = 22
+staffPopup.Center = true
+staffPopup.Font = FONT_MONO
+staffPopup.Color = COL_STAFF
 
--- Глобальные переменные состояния
 local LP = Players.LocalPlayer
 local myTeamColor = nil
 local cache = {}
@@ -285,22 +365,30 @@ local mapClock = 0
 local staffPopupText = nil
 local staffPopupUntil = 0
 
--- Вспомогательные функции
 local function hideSlot(s)
     for j = 1, 12 do s.lines[j].Visible = false end
-    s.name.Visible = false; s.cls.Visible = false; s.dist.Visible = false; s.reload.Visible = false; s.marker.Visible = false
+    s.name.Visible = false
+    s.cls.Visible = false
+    s.dist.Visible = false
+    s.reload.Visible = false
+    s.marker.Visible = false
 end
 
 local function hideModSlot(ms)
-    for j = 1, 12 do ms.lines[j].Visible = false; ms.tris[j].Visible = false end
+    for j = 1, 12 do
+        ms.lines[j].Visible = false
+        ms.tris[j].Visible = false
+    end
 end
 
 local function hideMslSlot(m)
-    m.marker.Visible = false; m.tag.Visible = false
+    m.marker.Visible = false
+    m.tag.Visible = false
 end
 
 local function hideStaffSlot(s)
-    s.marker.Visible = false; s.tag.Visible = false
+    s.marker.Visible = false
+    s.tag.Visible = false
 end
 
 local function partCorners(part)
@@ -325,7 +413,9 @@ local function collectModules(veh)
             elseif nm:match("^AmmoModel%d+$") then kind = "ammo" end
             if kind then
                 local ok, cr = pcall(partCorners, p)
-                if ok and cr then out[#out + 1] = { part = p, corners = cr, kind = kind } end
+                if ok and cr then
+                    out[#out + 1] = { part = p, corners = cr, kind = kind }
+                end
             end
         end
     end
@@ -348,7 +438,10 @@ local function ballMainGun(veh)
     local best, bestCal
     for _, g in ipairs(w:GetChildren()) do
         local c = ballCaliber(g.Name)
-        if c >= 20 and (not bestCal or c > bestCal) then best = g; bestCal = c end
+        if c >= 20 and (not bestCal or c > bestCal) then
+            best = g
+            bestCal = c
+        end
     end
     return best
 end
@@ -361,7 +454,8 @@ local function buildVehicle(veh)
     if not corners then return nil end
     local gun = ballMainGun(veh)
     return {
-        anchor = mass, name = veh.Name,
+        anchor = mass,
+        name = veh.Name,
         kind = veh:GetAttribute("Type"),
         class = classAbbr(veh:GetAttribute("VehicleClass")),
         gun = gun,
@@ -379,7 +473,9 @@ local function buildDrone(m)
     local pp = m.PrimaryPart
     if not pp then return nil end
     return {
-        anchor = pp, name = m.Name, kind = "Drone",
+        anchor = pp,
+        name = m.Name,
+        kind = "Drone",
         tag = (m.Name:gsub("%s*Drone%s*", "")):gsub("^%s*(.-)%s*$", "%1"),
         teamColor = m:GetAttribute("Team"),
         ownerVal = m:FindFirstChild("Owner"),
@@ -407,7 +503,6 @@ local function resolveAlly(e, myTeamName)
     return nil
 end
 
--- Зерно (Grain)
 local GRAIN_TEMPLATES = {
     {ReplicatedStorage, "PlaceableModels", "Drone", "Script", "ControlGUI", "Grain"},
     {ReplicatedStorage, "PlaceableModels", "Recon Drone", "Script", "ControlGUI", "Grain"},
@@ -434,7 +529,9 @@ local function refreshGrainAddrs()
     for i = 1, #GRAIN_TEMPLATES do
         local p = GRAIN_TEMPLATES[i]
         local node = p[1]
-        for j = 2, #p do node = node and node:FindFirstChild(p[j]) end
+        for j = 2, #p do
+            node = node and node:FindFirstChild(p[j])
+        end
         local a = node and node.Address
         if a and a > 4096 then out[#out + 1] = a end
     end
@@ -452,7 +549,9 @@ local function enforceGrain()
     for i = 1, #grainAddrs do
         local a = grainAddrs[i]
         local ok, b = pcall(MemoryRead, "byte", a + GRAIN_VISIBLE_OFFSET)
-        if ok and b ~= 0 then pcall(MemoryWrite, "byte", a + GRAIN_VISIBLE_OFFSET, 0) end
+        if ok and b ~= 0 then
+            pcall(MemoryWrite, "byte", a + GRAIN_VISIBLE_OFFSET, 0)
+        end
     end
 end
 
@@ -464,11 +563,12 @@ local function restoreGrain()
     grainAddrs = {}
 end
 
--- Ракетные категории
 local PROJ = {}
 do
     local function P(label, threat, names)
-        for _, n in ipairs(names) do PROJ[n:lower()] = { label = label, threat = threat } end
+        for _, n in ipairs(names) do
+            PROJ[n:lower()] = { label = label, threat = threat }
+        end
     end
     P("AA",     true,  {"SAM","SAM1","SAM2","SAM3","StingerRocket","PATRIOTProj","aim9m","kugelblitz"})
     P("ATGM",   false, {"wireatgm","roketatgm","KornetATGMModel","302ATM","DragonATGM","nlawmis","STURM","SS.11","losat","testatgm","Brimstone"})
@@ -511,7 +611,6 @@ local function ballBuildShellMap()
     return map
 end
 
--- Функции для флейров
 local function tapFlare()
     KeyPress(FLARE_VK)
     task.wait(0.05)
@@ -519,12 +618,15 @@ local function tapFlare()
 end
 
 local function throwFlares()
-    tapFlare(); task.wait(0.12); tapFlare()
+    tapFlare()
+    task.wait(0.12)
+    tapFlare()
     task.wait(1.6)
-    tapFlare(); task.wait(0.12); tapFlare()
+    tapFlare()
+    task.wait(0.12)
+    tapFlare()
 end
 
--- KD Dropper
 local function kdStaffPresent()
     if not modReady then return nil end
     local found
@@ -532,7 +634,10 @@ local function kdStaffPresent()
         local myId = LP and LP.UserId
         for _, pl in ipairs(Players:GetPlayers()) do
             local uid = pl.UserId
-            if uid and uid ~= myId and modSet[uid] then found = pl.Name; break end
+            if uid and uid ~= myId and modSet[uid] then
+                found = pl.Name
+                break
+            end
         end
     end)
     return found
@@ -544,9 +649,12 @@ local function kdEnabled()
     return ok and v == true
 end
 
--- Загрузка модов
 task.spawn(function()
-    for _, r in ipairs({ {id=348178106,name="Administrator"}, {id=347606116,name="Moderator"}, {id=348814130,name="Content Creator"} }) do
+    for _, r in ipairs({
+        {id=348178106, name="Administrator"},
+        {id=347606116, name="Moderator"},
+        {id=348814130, name="Content Creator"}
+    }) do
         local url = "https://groups.roblox.com/v1/groups/" .. MOD_GROUP .. "/roles/" .. r.id .. "/users?limit=100&sortOrder=Asc"
         local ok, res = pcall(HttpGet, url)
         if ok and res then
@@ -563,7 +671,6 @@ task.spawn(function()
     modReady = true
 end)
 
--- Фоновые обновления (оптимизированы)
 task.spawn(function()
     while running do
         local mt = LP and LP.Team
@@ -657,7 +764,6 @@ task.spawn(function()
     end
 end)
 
--- Отслеживание ракет (оптимизировано)
 task.spawn(function()
     while running do
         if Config.Missile or Config.AutoFlare then
@@ -677,8 +783,11 @@ task.spawn(function()
                 for _, c in ipairs(cont:GetChildren()) do
                     local cn = c.ClassName
                     local anchor
-                    if cn == "MeshPart" or cn == "Part" or cn == "UnionOperation" then anchor = c
-                    elseif cn == "Model" then anchor = c.PrimaryPart end
+                    if cn == "MeshPart" or cn == "Part" or cn == "UnionOperation" then
+                        anchor = c
+                    elseif cn == "Model" then
+                        anchor = c.PrimaryPart
+                    end
                     if anchor then
                         local cat = PROJ[c.Name:lower()]
                         if cat then
@@ -689,22 +798,26 @@ task.spawn(function()
                                 local px, py, pz = pp.X, pp.Y, pp.Z
                                 local moving = false
                                 local vel = anchor.AssemblyLinearVelocity
-                                if vel and (vel.X*vel.X + vel.Y*vel.Y + vel.Z*vel.Z) > 100 then moving = true end
+                                if vel and (vel.X*vel.X + vel.Y*vel.Y + vel.Z*vel.Z) > 100 then
+                                    moving = true
+                                end
                                 local pv = mslPrev[a2]
-                                local mvx, mvy, mvz = 0,0,0
+                                local mvx, mvy, mvz = 0, 0, 0
                                 if pv then
                                     mvx, mvy, mvz = px - pv[1], py - pv[2], pz - pv[3]
-                                    if not moving and (mvx*mvx + mvy*mvy + mvz*mvz) > 4 then moving = true end
-                                    pv[1],pv[2],pv[3] = px,py,pz
+                                    if not moving and (mvx*mvx + mvy*mvy + mvz*mvz) > 4 then
+                                        moving = true
+                                    end
+                                    pv[1], pv[2], pv[3] = px, py, pz
                                 else
-                                    mslPrev[a2] = {px,py,pz}
+                                    mslPrev[a2] = {px, py, pz}
                                 end
                                 if moving then
                                     mout[#mout + 1] = { anchor = anchor, label = cat.label, threat = cat.threat }
                                     if Config.AutoFlare and cat.threat and cat.label == "AA" and myPos and pv then
                                         local tmx, tmy, tmz = myPos.X - px, myPos.Y - py, myPos.Z - pz
-                                        if (tmx*tmx + tmy*tmy + tmz*tmz) < (FLARE_RANGE*FLARE_RANGE)
-                                           and (mvx*tmx + mvy*tmy + mvz*tmz) > 0 then
+                                        if (tmx*tmx + tmy*tmy + tmz*tmz) < (FLARE_RANGE * FLARE_RANGE)
+                                            and (mvx*tmx + mvy*tmy + mvz*tmz) > 0 then
                                             threatNear = true
                                         end
                                     end
@@ -736,7 +849,6 @@ task.spawn(function()
     end
 end)
 
--- Баллистика (расчет) – защита от ошибок
 local function ballVehOf(inst)
     local sv = Workspace:FindFirstChild("SpawnedVehicles")
     local svA = sv and sv.Address
@@ -779,13 +891,15 @@ local function ballOptic(veh)
     end
     for _, o in ipairs(cams:GetChildren()) do
         local ln = o.Name:lower()
-        if o.Value and o.Value.CFrame and not ln:find("backup") and not ln:find("mg") then return o.Value end
+        if o.Value and o.Value.CFrame and not ln:find("backup") and not ln:find("mg") then
+            return o.Value
+        end
     end
     return nil
 end
 
 local function ballHullCenter(veh)
-    local sx, sy, sz, n = 0,0,0,0
+    local sx, sy, sz, n = 0, 0, 0, 0
     for _, d in ipairs(veh:GetDescendants()) do
         local cn = d.ClassName
         if cn == "Part" or cn == "MeshPart" then
@@ -797,7 +911,7 @@ local function ballHullCenter(veh)
         end
     end
     if n == 0 then return nil end
-    return Vector3_new(sx/n, sy/n, sz/n)
+    return Vector3_new(sx / n, sy / n, sz / n)
 end
 
 task.spawn(function()
@@ -808,7 +922,9 @@ task.spawn(function()
             local pg = LP and LP:FindFirstChild("PlayerGui")
             local crewing = pg and pg:FindFirstChild("CrewGui")
             local veh, ch = nil, nil
-            if crewing then veh, ch = ballOwnVehicle() end
+            if crewing then
+                veh, ch = ballOwnVehicle()
+            end
             local gun = veh and ballMainGun(veh)
             local barrel = gun and ballBarrel(gun)
             local optic = veh and ballOptic(veh)
@@ -875,7 +991,6 @@ task.spawn(function()
     end
 end)
 
--- Проекция бокса (оптимизирована)
 local function projectBox(cf, corners, pts, front, sw, sh)
     local center = cf.Position
     local rv, uv, lv = cf.RightVector, cf.UpVector, cf.LookVector
@@ -946,17 +1061,16 @@ local function drawFaces(tris, pts, front, col, alpha)
     end
 end
 
--- Основной цикл рендеринга (оптимизирован, добавлена защита)
 local PTS, FRONT = {}, {}
 local MPTS, MFRONT = {}, {}
 
 local conn = RunService.RenderStepped:Connect(function(dt)
     if not running then return end
-    if dt and dt > 0 then fps = fps * 0.9 + (1 / dt) * 0.1 end
+    if dt and dt > 0 then
+        fps = fps * 0.9 + (1 / dt) * 0.1
+    end
 
-    -- Защита от ошибок в рендер-цикле
     local success, err = pcall(function()
-        -- KD Dropper
         if kdEnabled() then
             local staff = kdStaffPresent()
             if staff then
@@ -980,7 +1094,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
             kdWarned = false
         end
 
-        -- Auto Reload
         if Config.AutoReload and crewLoadBar then
             local needle, win
             for _, d in ipairs(crewLoadBar:GetDescendants()) do
@@ -1015,12 +1128,10 @@ local conn = RunService.RenderStepped:Connect(function(dt)
 
         if Config.HideGrain then enforceGrain() end
 
-        -- Overlay
         ovrBg.Visible = Config.Overlay
         ovrTitle.Visible = Config.Overlay
         for i = 1, 5 do ovrLines[i].Visible = Config.Overlay end
 
-        -- Ballistic
         if Config.Ballistic and ballResult then
             local ballCol, ballA = getColor("misc_ball_col", COL_BALL, 1)
             ballRay.Color = ballCol
@@ -1119,7 +1230,7 @@ local conn = RunService.RenderStepped:Connect(function(dt)
             for i = 1, lastModDrawn do hideModSlot(modSlots[i]) end
             lastDrawn, lastModDrawn = 0, 0
             if Config.Overlay then
-                ovrTitle.Text = "MrakobesovPatch  [off]"  -- изменено
+                ovrTitle.Text = "MrakobesovPatch  [off]"
                 for i = 1, 5 do ovrLines[i].Text = "" end
             end
             return
@@ -1176,7 +1287,8 @@ local conn = RunService.RenderStepped:Connect(function(dt)
                     local alpha = 1
                     if fade and dm and not isDrone then
                         alpha = (FADE_END - dm) / (FADE_END - FADE_START)
-                        if alpha > 1 then alpha = 1
+                        if alpha > 1 then
+                            alpha = 1
                         elseif alpha <= 0 then
                             skip = true
                             alpha = 0
@@ -1350,7 +1462,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
         for i = modDrawn + 1, lastModDrawn do hideModSlot(modSlots[i]) end
         lastDrawn, lastModDrawn = drawn, modDrawn
 
-        -- Missile ESP
         local mdrawn = 0
         if Config.Missile then
             local ml = mslTargets
@@ -1387,7 +1498,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
         for i = mdrawn + 1, lastMslDrawn do hideMslSlot(mslSlots[i]) end
         lastMslDrawn = mdrawn
 
-        -- Mod Checker (staff)
         local staffDrawn = 0
         if Config.ModChecker then
             local ml = modTargets
@@ -1419,7 +1529,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
         for i = staffDrawn + 1, lastStaffDrawn do hideStaffSlot(staffSlots[i]) end
         lastStaffDrawn = staffDrawn
 
-        -- Staff list UI
         if Config.ModChecker and #modTargets > 0 then
             local px = (cam and cam.ViewportSize.X or 1920) - 236
             local n = #modTargets
@@ -1446,7 +1555,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
             for i = 1, STAFFPOOL do staffLines[i].Visible = false end
         end
 
-        -- Staff popup
         if Config.ModChecker and #modTargets > 0 then
             local vpSize = cam and cam.ViewportSize or Vector2_new(1920, 1080)
             local n = #modTargets
@@ -1457,7 +1565,6 @@ local conn = RunService.RenderStepped:Connect(function(dt)
             staffPopup.Visible = false
         end
 
-        -- Overlay info (изменено название)
         if Config.Overlay then
             ovrTitle.Text = "MrakobesovPatch"
             ovrLines[1].Text = "FPS       " .. floor(fps)
@@ -1472,7 +1579,104 @@ local conn = RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- Создание UI (исправлен баг синхронизации: все Toggle получают начальное значение из Config)
+-- ======================================================================
+-- MOUSE AIM (только Enabled и Data, без FireServer)
+-- ======================================================================
+local mouseAimValue = nil
+local mouseAimKeepAlive = nil
+
+local function getMouseAim()
+    if not mouseAimValue then
+        local ma = ReplicatedFirst:FindFirstChild("NewGuiData")
+            and ReplicatedFirst.NewGuiData:FindFirstChild("Gunner")
+            and ReplicatedFirst.NewGuiData.Gunner:FindFirstChild("Switches")
+            and ReplicatedFirst.NewGuiData.Gunner.Switches:FindFirstChild("MouseAim")
+        if ma then
+            mouseAimValue = ma:FindFirstChild("Enabled")
+        end
+    end
+    return mouseAimValue
+end
+
+local function getMouseAimData()
+    local ma = ReplicatedFirst:FindFirstChild("NewGuiData")
+        and ReplicatedFirst.NewGuiData:FindFirstChild("Gunner")
+        and ReplicatedFirst.NewGuiData.Gunner:FindFirstChild("Switches")
+        and ReplicatedFirst.NewGuiData.Gunner.Switches:FindFirstChild("MouseAim")
+    if ma then
+        return ma:FindFirstChild("Data")
+    end
+    return nil
+end
+
+local function isGunner()
+    local newGui = ReplicatedFirst:FindFirstChild("NewGuiData")
+    if newGui then
+        return newGui:FindFirstChild("Gunner") ~= nil
+    end
+    return false
+end
+
+local function setMouseAim(state)
+    local val = getMouseAim()
+    if val and val:IsA("BoolValue") then
+        val.Value = state
+    end
+    local data = getMouseAimData()
+    if data then
+        if data:IsA("BoolValue") then
+            data.Value = state
+        elseif data:IsA("NumberValue") then
+            data.Value = state and 1 or 0
+        end
+    end
+    return true
+end
+
+local function startMouseAimKeepAlive()
+    if mouseAimKeepAlive then return end
+    mouseAimKeepAlive = RunService.Heartbeat:Connect(function()
+        if Config.MouseAim and isGunner() then
+            local val = getMouseAim()
+            if val and val:IsA("BoolValue") and val.Value ~= true then
+                val.Value = true
+            end
+            local data = getMouseAimData()
+            if data then
+                if data:IsA("BoolValue") and data.Value ~= true then
+                    data.Value = true
+                elseif data:IsA("NumberValue") and data.Value ~= 1 then
+                    data.Value = 1
+                end
+            end
+        end
+    end)
+end
+
+local function stopMouseAimKeepAlive()
+    if mouseAimKeepAlive then
+        mouseAimKeepAlive:Disconnect()
+        mouseAimKeepAlive = nil
+    end
+end
+
+task.spawn(function()
+    while running do
+        if isGunner() and Config.MouseAim then
+            setMouseAim(true)
+            startMouseAimKeepAlive()
+        end
+        task.wait(2)
+    end
+end)
+
+if Config.MouseAim then
+    setMouseAim(true)
+    startMouseAimKeepAlive()
+end
+-- ======================================================================
+
+-- UI
 local function try(f)
     local ok, e = pcall(f)
     if not ok then warn("[MrakobesovPatch] widget:", e) end
@@ -1521,6 +1725,18 @@ local uiOk, uiErr = pcall(function()
         try(function() xsec:Toggle("misc_ballistic", "Ballistic Calc", Config.Ballistic, function(v) Config.Ballistic = v end) end)
         try(function() xsec:ColorPicker("misc_ball_col", 120,255,180,255, NOOP) end)
         try(function() xsec:Toggle("misc_autoflare", "Auto Flare", Config.AutoFlare, function(v) Config.AutoFlare = v end) end)
+        try(function()
+            xsec:Toggle("misc_mouseaim", "Mouse Aim (Gunner)", Config.MouseAim, function(v)
+                Config.MouseAim = v
+                if v then
+                    setMouseAim(true)
+                    startMouseAimKeepAlive()
+                else
+                    setMouseAim(false)
+                    stopMouseAimKeepAlive()
+                end
+            end)
+        end)
 
         local ksec = tab:Section("KD Dropper", "Right")
         try(function() ksec:Toggle("kd_drop", "KD Dropper", Config.KDDrop, function(v) Config.KDDrop = v end) end)
@@ -1528,13 +1744,12 @@ local uiOk, uiErr = pcall(function()
 end)
 if not uiOk then pcall(Notify, "MrakobesovPatch", "UI failed: " .. tostring(uiErr), 8) end
 
--- Экспорт для остановки
 _G.MTC = {
     stop = function()
         running = false
         if Config.HideGrain then pcall(restoreGrain) end
         pcall(function() conn:Disconnect() end)
-        -- Освобождение ресурсов
+        if mouseAimKeepAlive then mouseAimKeepAlive:Disconnect() end
         for i = 1, POOL do
             local s = slots[i]
             for j = 1, 12 do pcall(function() s.lines[j]:Remove() end) end
@@ -1577,5 +1792,5 @@ _G.MTC = {
     end,
 }
 
-pcall(Notify, "MrakobesovPatch " .. VERSION, "v 0.0.1", 5)
+pcall(Notify, "MrakobesovPatch " .. VERSION, "loaded - Ballistic / Reload / Auto Flare / KD Dropper / Mouse Aim (без FireServer)", 5)
 print("[MrakobesovPatch] loaded " .. VERSION .. ", uiOk=", uiOk)
